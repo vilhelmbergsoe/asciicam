@@ -6,14 +6,14 @@ authors = ["Vilhelm Bergsøe <vilhelmbergsoe@gmail.com>"]
 
 [dependencies]
 image = "0.23.14"
-termion = "1.5.6"
 chrono = "0.4.22"
+crossterm = "0.23"
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 nokhwa = { version = "0.9.4", features = ["input-v4l"] }
 
-[target.'cfg(windows)'.dependencies]
-nokhwa = { version = "0.9.4", features = ["input-msmf"] }
-
-[target.'cfg(macos)'.dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
 nokhwa = { version = "0.9.4", features = ["input-avfoundation"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+nokhwa = { version = "0.9.4", features = ["input-msmf"] }

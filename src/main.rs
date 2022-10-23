@@ -1,95 +1,116 @@
+use crossterm::execute;
+use crossterm::{
+    cursor,
+    event::{poll, read, Event, KeyCode, KeyEvent},
+    terminal,
+};
 use image::{DynamicImage, GrayImage};
 use nokhwa::{Camera, CameraFormat, FrameFormat};
 use std::fs::File;
-use std::io::{stdout, Read, Result, Write};
-use termion::async_stdin;
-use termion::raw::IntoRawMode;
+use std::io::{stdout, Write};
 
-const CHARSET: &[char] = &[' ', ' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
+const CHARSET: &[char] = &[' ', ' ', ' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
 
 fn get_char(l: u8) -> char {
-    let idx = ((l as f32 - 0.0) * ((CHARSET.len() as f32 - 1.0 - 0.0) / (255.0 - 0.0)) + 0.0)
-        .round() as usize;
+    let idx: usize = ((l as usize * (CHARSET.len() - 1)) as f32 / 255.0).round() as usize;
 
     CHARSET[idx]
 }
 
-fn write_image_buffer(image_buffer: &GrayImage, out: &mut dyn Write) -> Result<()> {
-    for y in 0..image_buffer.height() {
-        let mut line = String::new(); // This is to reduce write syscalls
+fn write_image_buffer(
+    image_buffer: &GrayImage,
+    out: &mut dyn Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut buf: String = String::with_capacity(
+        image_buffer.width() as usize * image_buffer.height() as usize
+            + (2 * image_buffer.height()) as usize,
+    );
 
+    for y in 0..image_buffer.height() {
         for x in 0..image_buffer.width() {
-            let pixel = image_buffer.get_pixel(x, y).0;
+            let pixel = image::ImageBuffer::get_pixel(image_buffer, x, y).0;
 
             let l = pixel[0];
 
             let c = get_char(l);
 
-            line.push(c);
+            buf.push(c);
         }
-        write!(out, "{}\r\n", line)?;
+        buf.push('\r');
+        buf.push('\n');
     }
+
+    write!(out, "{buf}")?;
     Ok(())
 }
 
-fn main() -> Result<()> {
-    let camera = Camera::new(
-        0,                                                              // index
-        Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)), // format
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let camera_result = Camera::new(
+        0,
+        Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)),
     );
 
-    let mut camera = match camera {
+    let mut camera = match camera_result {
         Ok(camera) => camera,
         Err(e) => {
-            eprintln!("Problem initializing camera: {}", e);
+            eprintln!("Problem initializing camera: {e}");
             std::process::exit(1);
         }
     };
 
-    camera.open_stream().expect("Problem opening stream");
+    camera.open_stream()?;
 
-    let stdout = stdout();
-    let mut stdout = stdout.lock().into_raw_mode().unwrap();
-    let mut stdin = async_stdin().bytes();
+    let mut stdout = stdout();
+
+    terminal::enable_raw_mode()?;
 
     loop {
-        let term_size = termion::terminal_size().expect("Could not get terminal size");
+        let (term_width, term_height) = terminal::size()?;
 
-        let frame: DynamicImage = DynamicImage::ImageRgb8(camera.frame().unwrap());
+        let frame: DynamicImage = DynamicImage::ImageRgb8(camera.frame()?);
         let frame: GrayImage = frame
             .resize_exact(
-                term_size.0.into(),
-                (term_size.1 - 1).into(),
-                image::imageops::FilterType::Gaussian,
+                term_width.into(),
+                (term_height - 1).into(),
+                image::imageops::FilterType::Nearest,
             )
             .to_luma8();
 
-        let b = stdin.next();
+        if poll(std::time::Duration::from_secs(0))? {
+            let event = read()?;
 
-        match b {
-            Some(Ok(b'q')) => break,
-            Some(Ok(b's')) => {
-                let dt = chrono::Utc::now();
-                let mut file =
-                    File::create(format!("asciicam-{}.txt", dt.format("%Y-%m-%d_%H:%M:%S")))
-                        .unwrap();
-                write_image_buffer(&frame, &mut file).unwrap();
-            }
-            _ => (),
+            if let Event::Key(KeyEvent {
+                code: KeyCode::Char(c),
+                ..
+            }) = event
+            {
+                match c {
+                    'q' => break,
+                    's' => {
+                        let dt = chrono::Utc::now();
+                        let mut file = File::create(format!(
+                            "asciicam-{}.txt",
+                            dt.format("%Y-%m-%d_%H:%M:%S")
+                        ))?;
+                        write_image_buffer(&frame, &mut file)?;
+                    }
+                    _ => (),
+                }
+            };
         }
 
-        write!(
+        execute!(
             stdout,
-            "{}{}",
-            termion::clear::All,
-            termion::cursor::Goto(1, 1)
-        )
-        .unwrap();
+            terminal::Clear(terminal::ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
 
-        write_image_buffer(&frame, &mut stdout).unwrap();
+        write_image_buffer(&frame, &mut stdout)?;
 
-        stdout.flush().unwrap();
+        stdout.flush()?;
     }
+
+    terminal::disable_raw_mode()?;
 
     Ok(())
 }
