@@ -7,6 +7,8 @@ _asciicam picture of me holding a basketball_
 
 ## usage
 
+*only linux is supported currently*
+
 ```console
 $ git clone https://github.com/vilhelmbergsoe/asciicam && cd asciicam/
 $ cargo build --release

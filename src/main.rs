@@ -4,10 +4,14 @@ use crossterm::{
     event::{poll, read, Event, KeyCode, KeyEvent},
     terminal,
 };
+use fast_image_resize as fr;
 use image::{DynamicImage, GrayImage};
-use nokhwa::{Camera, CameraFormat, FrameFormat};
 use std::fs::File;
 use std::io::{stdout, Write};
+use std::num::NonZeroU32;
+use v4l::{
+    buffer::Type, io::mmap::Stream, io::traits::CaptureStream, video::Capture, Device, FourCC,
+};
 
 const CHARSET: &[char] = &[' ', ' ', ' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
 
@@ -45,20 +49,14 @@ fn write_image_buffer(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let camera_result = Camera::new(
-        0,
-        Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)),
-    );
+    let dev = Device::new(0)?;
 
-    let mut camera = match camera_result {
-        Ok(camera) => camera,
-        Err(e) => {
-            eprintln!("Problem initializing camera: {e}");
-            std::process::exit(1);
-        }
-    };
+    let mut fmt = dev.format()?;
 
-    camera.open_stream()?;
+    fmt.fourcc = FourCC::new(b"MJPG");
+    dev.set_format(&fmt)?;
+
+    let mut stream = Stream::with_buffers(&dev, Type::VideoCapture, 4)?;
 
     let mut stdout = stdout();
 
@@ -67,14 +65,85 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (term_width, term_height) = terminal::size()?;
 
-        let frame: DynamicImage = DynamicImage::ImageRgb8(camera.frame()?);
-        let frame: GrayImage = frame
-            .resize_exact(
-                term_width.into(),
-                (term_height - 1).into(),
-                image::imageops::FilterType::Nearest,
-            )
-            .to_luma8();
+        let (buf, _) = stream.next()?;
+
+        let decoder = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS).from_mem(buf)?;
+        let mut img = decoder.grayscale()?;
+
+        let raw_pixels = match img.read_scanlines() {
+            None => {
+                terminal::disable_raw_mode()?;
+                return Err("Could not decompress image".into());
+            }
+            Some(v) => v,
+        };
+
+        img.finish_decompress();
+
+        let src_frame = fr::Image::from_vec_u8(
+            match NonZeroU32::new(fmt.width) {
+                None => {
+                    terminal::disable_raw_mode()?;
+                    return Err("Could not create NonZeroU32".into());
+                }
+                Some(v) => v,
+            },
+            match NonZeroU32::new(fmt.height) {
+                None => {
+                    terminal::disable_raw_mode()?;
+                    return Err("Could not create NonZeroU32".into());
+                }
+                Some(v) => v,
+            },
+            raw_pixels,
+            fr::PixelType::U8,
+        )?;
+
+        let dst_width = match NonZeroU32::new(term_width.into()) {
+            None => {
+                terminal::disable_raw_mode()?;
+                return Err("Could not create NonZeroU32".into());
+            }
+            Some(v) => v,
+        };
+
+        let dst_height = match NonZeroU32::new(term_height.into()) {
+            None => {
+                terminal::disable_raw_mode()?;
+                return Err("Could not create NonZeroU32".into());
+            }
+            Some(v) => v,
+        };
+
+        let mut dst_frame = fr::Image::new(dst_width, dst_height, src_frame.pixel_type());
+
+        let mut dst_view = dst_frame.view_mut();
+
+        let mut resizer = fr::Resizer::new(fr::ResizeAlg::Nearest);
+
+        match resizer.resize(&src_frame.view(), &mut dst_view) {
+            Ok(_) => (),
+            Err(e) => {
+                terminal::disable_raw_mode()?;
+                return Err(e.into());
+            }
+        };
+
+        let frame: GrayImage = DynamicImage::ImageLuma8(
+            match image::ImageBuffer::from_raw(
+                dst_width.get(),
+                dst_height.get(),
+                dst_frame.buffer().to_vec(),
+            ) {
+                None => {
+                    terminal::disable_raw_mode()?;
+                    return Err("Could not convert raw buffer to image buffer".into());
+                },
+                Some(v) => v,
+            },
+        )
+        .fliph()
+        .to_luma8();
 
         if poll(std::time::Duration::from_secs(0))? {
             let event = read()?;

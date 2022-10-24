@@ -8,12 +8,6 @@ authors = ["Vilhelm Bergsøe <vilhelmbergsoe@gmail.com>"]
 image = "0.23.14"
 chrono = "0.4.22"
 crossterm = "0.23"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-nokhwa = { version = "0.9.4", features = ["input-v4l"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-nokhwa = { version = "0.9.4", features = ["input-avfoundation"] }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-nokhwa = { version = "0.9.4", features = ["input-msmf"] }
+v4l = "0.13.0"
+mozjpeg = "0.9.4"
+fast_image_resize = "1.0.0"
