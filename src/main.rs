@@ -5,7 +5,7 @@ use crossterm::{
     terminal,
 };
 use fast_image_resize as fr;
-use image::{DynamicImage, GrayImage};
+use image::GrayImage;
 use std::fs::File;
 use std::io::{stdout, Write};
 use std::num::NonZeroU32;
@@ -136,20 +136,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-        let frame: GrayImage = DynamicImage::ImageLuma8(
-            match image::ImageBuffer::from_raw(
-                dst_width.get(),
-                dst_height.get(),
-                dst_frame.buffer().to_vec(),
-            ) {
-                None => {
-                    terminal::disable_raw_mode()?;
-                    return Err("Could not convert raw buffer to image buffer".into());
-                }
-                Some(v) => v,
-            },
-        )
-        .to_luma8();
+        let frame: GrayImage = match image::ImageBuffer::from_raw(
+            dst_width.get(),
+            dst_height.get(),
+            dst_frame.buffer().to_vec(),
+        ) {
+            None => {
+                terminal::disable_raw_mode()?;
+                return Err("Could not convert raw buffer to image buffer".into());
+            }
+            Some(v) => v,
+        };
 
         if poll(std::time::Duration::from_secs(0))? {
             let event = read()?;
