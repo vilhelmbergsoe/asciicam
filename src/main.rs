@@ -13,10 +13,15 @@ use v4l::{
     buffer::Type, io::mmap::Stream, io::traits::CaptureStream, video::Capture, Device, FourCC,
 };
 
-const CHARSET: &[char] = &[' ', ' ', ' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
+// the extra char is to avoid floating point arithmetic and won't be displayed
+const CHARSET: &[char] = &[
+    ' ', ' ', ' ', '.', ':', '-', '=', '+', '*', '#', '%', '@', '?',
+];
 
-fn get_char(l: u8) -> char {
-    let idx: usize = ((l as usize * (CHARSET.len() - 1)) as f32 / 255.0).round() as usize;
+const fn get_char(l: u8) -> char {
+    // this should always truncate which means the last char in CHARSET won't be reached
+    // this is done to avoid floating point arithmetic, which is expensive
+    let idx: usize = (l as usize * (CHARSET.len() - 1)) / 255_usize;
 
     CHARSET[idx]
 }
@@ -31,7 +36,8 @@ fn write_image_buffer(
     );
 
     for y in 0..image_buffer.height() {
-        for x in 0..image_buffer.width() {
+        for x in (0..image_buffer.width()).rev() {
+            // this flips the image
             let pixel = image::ImageBuffer::get_pixel(image_buffer, x, y).0;
 
             let l = pixel[0];
@@ -40,6 +46,7 @@ fn write_image_buffer(
 
             buf.push(c);
         }
+
         buf.push('\r');
         buf.push('\n');
     }
@@ -138,11 +145,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None => {
                     terminal::disable_raw_mode()?;
                     return Err("Could not convert raw buffer to image buffer".into());
-                },
+                }
                 Some(v) => v,
             },
         )
-        .fliph()
         .to_luma8();
 
         if poll(std::time::Duration::from_secs(0))? {
