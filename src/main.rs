@@ -36,8 +36,8 @@ fn write_image_buffer(
     );
 
     for y in 0..image_buffer.height() {
+        // this flips the image
         for x in (0..image_buffer.width()).rev() {
-            // this flips the image
             let pixel = image::ImageBuffer::get_pixel(image_buffer, x, y).0;
 
             let l = pixel[0];
@@ -53,6 +53,83 @@ fn write_image_buffer(
 
     write!(out, "{buf}")?;
     Ok(())
+}
+
+fn get_cam(
+    stream_buf: &[u8],
+    src_width: u32,
+    src_height: u32,
+    dst_width: u32,
+    dst_height: u32,
+) -> Result<GrayImage, Box<dyn std::error::Error>> {
+    let decoder = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS).from_mem(stream_buf)?;
+    let mut img = decoder.grayscale()?;
+
+    let raw_pixels = match img.read_scanlines() {
+        None => {
+            return Err("Could not decompress image".into());
+        }
+        Some(v) => v,
+    };
+
+    img.finish_decompress();
+
+    let src_frame = fr::Image::from_vec_u8(
+        match NonZeroU32::new(src_width) {
+            None => {
+                return Err("Could not create NonZeroU32".into());
+            }
+            Some(v) => v,
+        },
+        match NonZeroU32::new(src_height) {
+            None => {
+                return Err("Could not create NonZeroU32".into());
+            }
+            Some(v) => v,
+        },
+        raw_pixels,
+        fr::PixelType::U8,
+    )?;
+
+    let dst_width = match NonZeroU32::new(dst_width) {
+        None => {
+            return Err("Could not create NonZeroU32".into());
+        }
+        Some(v) => v,
+    };
+
+    let dst_height = match NonZeroU32::new(dst_height) {
+        None => {
+            return Err("Could not create NonZeroU32".into());
+        }
+        Some(v) => v,
+    };
+
+    let mut dst_frame = fr::Image::new(dst_width, dst_height, src_frame.pixel_type());
+
+    let mut dst_view = dst_frame.view_mut();
+
+    let mut resizer = fr::Resizer::new(fr::ResizeAlg::Nearest);
+
+    match resizer.resize(&src_frame.view(), &mut dst_view) {
+        Ok(_) => (),
+        Err(e) => {
+            return Err(e.into());
+        }
+    };
+
+    let frame: GrayImage = match image::ImageBuffer::from_raw(
+        dst_width.get(),
+        dst_height.get(),
+        dst_frame.buffer().to_vec(),
+    ) {
+        None => {
+            return Err("Could not convert raw buffer to image buffer".into());
+        }
+        Some(v) => v,
+    };
+
+    Ok(frame)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -74,78 +151,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (buf, _) = stream.next()?;
 
-        let decoder = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS).from_mem(buf)?;
-        let mut img = decoder.grayscale()?;
-
-        let raw_pixels = match img.read_scanlines() {
-            None => {
-                terminal::disable_raw_mode()?;
-                return Err("Could not decompress image".into());
-            }
-            Some(v) => v,
-        };
-
-        img.finish_decompress();
-
-        let src_frame = fr::Image::from_vec_u8(
-            match NonZeroU32::new(fmt.width) {
-                None => {
-                    terminal::disable_raw_mode()?;
-                    return Err("Could not create NonZeroU32".into());
-                }
-                Some(v) => v,
-            },
-            match NonZeroU32::new(fmt.height) {
-                None => {
-                    terminal::disable_raw_mode()?;
-                    return Err("Could not create NonZeroU32".into());
-                }
-                Some(v) => v,
-            },
-            raw_pixels,
-            fr::PixelType::U8,
-        )?;
-
-        let dst_width = match NonZeroU32::new(term_width.into()) {
-            None => {
-                terminal::disable_raw_mode()?;
-                return Err("Could not create NonZeroU32".into());
-            }
-            Some(v) => v,
-        };
-
-        let dst_height = match NonZeroU32::new(term_height.into()) {
-            None => {
-                terminal::disable_raw_mode()?;
-                return Err("Could not create NonZeroU32".into());
-            }
-            Some(v) => v,
-        };
-
-        let mut dst_frame = fr::Image::new(dst_width, dst_height, src_frame.pixel_type());
-
-        let mut dst_view = dst_frame.view_mut();
-
-        let mut resizer = fr::Resizer::new(fr::ResizeAlg::Nearest);
-
-        match resizer.resize(&src_frame.view(), &mut dst_view) {
-            Ok(_) => (),
+        let frame: GrayImage = match get_cam(
+            buf,
+            fmt.width,
+            fmt.height,
+            term_width.into(),
+            term_height.into(),
+        ) {
+            Ok(frame) => frame,
             Err(e) => {
                 terminal::disable_raw_mode()?;
-                return Err(e.into());
+                return Err(e);
             }
-        };
-
-        let frame: GrayImage = match image::ImageBuffer::from_raw(
-            dst_width.get(),
-            dst_height.get(),
-            dst_frame.buffer().to_vec(),
-        ) {
-            None => {
-                terminal::disable_raw_mode()?;
-                return Err("Could not convert raw buffer to image buffer".into());
-            }
-            Some(v) => v,
         };
 
         if poll(std::time::Duration::from_secs(0))? {
