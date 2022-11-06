@@ -4,6 +4,7 @@ use crossterm::{
     event::{poll, read, Event, KeyCode, KeyEvent},
     terminal,
 };
+use eyre::{eyre, Result};
 use fast_image_resize as fr;
 use image::GrayImage;
 use std::fs::File;
@@ -26,10 +27,7 @@ const fn get_char(l: u8) -> char {
     CHARSET[idx]
 }
 
-fn write_image_buffer(
-    image_buffer: &GrayImage,
-    out: &mut dyn Write,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn write_image_buffer(image_buffer: &GrayImage, out: &mut dyn Write) -> Result<()> {
     let mut buf: String = String::with_capacity(
         image_buffer.width() as usize * image_buffer.height() as usize
             + (2 * image_buffer.height()) as usize,
@@ -61,13 +59,13 @@ fn get_cam(
     src_height: u32,
     dst_width: u32,
     dst_height: u32,
-) -> Result<GrayImage, Box<dyn std::error::Error>> {
+) -> Result<GrayImage> {
     let decoder = mozjpeg::Decompress::with_markers(mozjpeg::ALL_MARKERS).from_mem(stream_buf)?;
     let mut img = decoder.grayscale()?;
 
     let raw_pixels = match img.read_scanlines() {
         None => {
-            return Err("Could not decompress image".into());
+            return Err(eyre!("Could not decompress image"));
         }
         Some(v) => v,
     };
@@ -77,13 +75,13 @@ fn get_cam(
     let src_frame = fr::Image::from_vec_u8(
         match NonZeroU32::new(src_width) {
             None => {
-                return Err("Could not create NonZeroU32".into());
+                return Err(eyre!("Could not create NonZeroU32"));
             }
             Some(v) => v,
         },
         match NonZeroU32::new(src_height) {
             None => {
-                return Err("Could not create NonZeroU32".into());
+                return Err(eyre!("Could not create NonZeroU32"));
             }
             Some(v) => v,
         },
@@ -93,14 +91,14 @@ fn get_cam(
 
     let dst_width = match NonZeroU32::new(dst_width) {
         None => {
-            return Err("Could not create NonZeroU32".into());
+            return Err(eyre!("Could not create NonZeroU32"));
         }
         Some(v) => v,
     };
 
     let dst_height = match NonZeroU32::new(dst_height) {
         None => {
-            return Err("Could not create NonZeroU32".into());
+            return Err(eyre!("Could not create NonZeroU32"));
         }
         Some(v) => v,
     };
@@ -124,7 +122,7 @@ fn get_cam(
         dst_frame.buffer().to_vec(),
     ) {
         None => {
-            return Err("Could not convert raw buffer to image buffer".into());
+            return Err(eyre!("Could not convert raw buffer to image buffer"));
         }
         Some(v) => v,
     };
@@ -132,7 +130,7 @@ fn get_cam(
     Ok(frame)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let dev = Device::new(0)?;
 
     let mut fmt = dev.format()?;
