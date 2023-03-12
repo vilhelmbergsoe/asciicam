@@ -10,9 +10,12 @@ _asciicam picture of me holding a basketball_
 *only linux is supported currently*
 
 ```console
-$ git clone https://github.com/vilhelmbergsoe/asciicam && cd asciicam/
-$ cargo build --release
-$ ./target/release/asciicam
+git clone https://github.com/vilhelmbergsoe/asciicam && cd asciicam/
+cargo run --release
+./target/release/asciicam
+# or with nix flakes
+nix run
+
 ```
 
 ## keybindings
