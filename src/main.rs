@@ -131,7 +131,10 @@ fn get_cam(
 }
 
 fn main() -> Result<()> {
-    let dev = Device::new(0)?;
+    let dev = match Device::new(0) {
+        Ok(dev) => dev,
+        Err(_) => return Err(eyre!("Could not find default device '0'. Is a webcam available / plugged in?"))
+    };
 
     let mut fmt = dev.format()?;
 
