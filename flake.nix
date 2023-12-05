@@ -43,6 +43,7 @@
 
           nativeBuildInputs = [
             pkgs.libv4l
+
           ];
 
           # Additional environment variables can be set directly
@@ -117,11 +118,14 @@
 
           # Additional dev-shell environment variables can be set directly
           # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
+	  LIBCLANG_PATH="${pkgs.llvmPackages.libclang.lib}/lib";
 
           # Extra inputs can be added here
           nativeBuildInputs = with pkgs; [
             cargo
             rustc
+            libv4l
+            rust-analyzer
           ];
         };
       });

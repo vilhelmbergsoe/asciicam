@@ -8,7 +8,7 @@ authors = ["Vilhelm Bergsøe <vilhelmbergsoe@gmail.com>"]
 image = "0.24.5"
 chrono = "0.4.23"
 crossterm = "0.25.0"
-v4l = "0.13.0"
+v4l = { git="https://github.com/vilhelmbergsoe/libv4l-rs", branch="fix_eintr_poll" }
 mozjpeg = "0.9.4"
 fast_image_resize = "2.4.0"
 eyre = "0.6.8"
